@@ -4,13 +4,11 @@
     "keywords": ["workflow", "symfony", "laravel", "laravel7", "laravel8"],
     "license": "MIT",
     "require": {
-        "php": "^7.4|^8.0|^8.1",
+        "php": "^7.4|^8.0|^8.1|^8.2",
         "symfony/workflow": "^6.0",
-        "symfony/process": "^6.0",
+        "symfony/process": "^6.0|^7.0",
         "symfony/event-dispatcher-contracts": "^2.4",
-        "illuminate/console": "^8.0|^9.0",
-        "illuminate/support": "^8.0|^9.0",
-        "illuminate/contracts": "^8.0|^9.0"
+        "illuminate/support": "^8.0|^9.0|^10|^11"
     },
     "autoload": {
         "psr-4": {
