@@ -56,9 +56,24 @@ trait WorkflowTrait
         return WorkflowFacade::get($this, $workflow)->getDefinition()->getInitialPlaces()[0] ?? '';
     }
 
+    /**
+     * @param $workflow
+     *
+     * @return mixed
+     */
     public function getAllFinalStatus($workflow = null)
     {
         return WorkflowFacade::load($this, $workflow)->getLastStatus();
+    }
+
+    /**
+     * @param $workflow
+     *
+     * @return mixed
+     */
+    public function getFinalStatus($workflow = null)
+    {
+        return WorkflowFacade::load($this, $workflow)->getFinalStatus();
     }
 
     /**
