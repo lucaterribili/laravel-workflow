@@ -16,16 +16,16 @@ class WorkflowServiceProvider extends ServiceProvider
      *
      * @return void
      */
-    public function boot()
+    public function boot(): void
     {
         $configPath = $this->configPath();
         $databasePath = $this->databasePath();
         $this->publishes([
-            "${configPath}/workflow.php" => $this->publishPath('workflow.php'),
-            "${configPath}/workflow_registry.php" => $this->publishPath('workflow_registry.php'),
+            "{$configPath}/workflow.php" => $this->publishPath('workflow.php'),
+            "{$configPath}/workflow_registry.php" => $this->publishPath('workflow_registry.php'),
         ], 'config');
         $this->publishes([
-            "${databasePath}/migrations/" => database_path('migrations'),
+            "{$databasePath}/migrations/" => database_path('migrations'),
         ], 'migrations');
     }
 
@@ -34,7 +34,7 @@ class WorkflowServiceProvider extends ServiceProvider
      *
      * @return void
      */
-    public function register()
+    public function register(): void
     {
         $this->mergeConfigFrom(
             $this->configPath() . '/workflow_registry.php',
@@ -47,7 +47,7 @@ class WorkflowServiceProvider extends ServiceProvider
             $workflowConfigs = $app->make('config')->get('workflow', []);
             $registryConfig = $app->make('config')->get('workflow_registry');
 
-            return new WorkflowRegistry($workflowConfigs, $registryConfig, $app->make(Dispatcher::class));
+            return new WorkflowRegistry($workflowConfigs, $app->make(Dispatcher::class), $registryConfig);
         });
     }
 

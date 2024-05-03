@@ -22,6 +22,7 @@ class CreateTransitionsTable extends Migration
             $table->json('from');
             $table->string('to');
             $table->string('permission', 255)->nullable();
+            $table->boolean('handle_by_system')->default(0);
             $table->timestamps();
         });
     }
