@@ -1,6 +1,6 @@
 {
     "name": "lucaterribili/laravel-workflow",
-    "description": "Integerate Symfony Workflow component into Laravel.",
+    "description": "Integrate Symfony Workflow component into Laravel.",
     "keywords": ["workflow", "symfony", "laravel", "laravel7", "laravel8"],
     "license": "MIT",
     "require": {

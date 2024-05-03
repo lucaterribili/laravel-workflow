@@ -3,15 +3,17 @@
 namespace LucaTerribili\LaravelWorkflow;
 
 use Illuminate\Support\Arr;
+use ReflectionException;
 use Symfony\Component\Workflow\Registry;
-use Symfony\Component\Workflow\Workflow;
+use LucaTerribili\LaravelWorkflow\Classes\FridayWorkflow as Workflow;
 use Symfony\Component\Workflow\Definition;
-use Symfony\Component\Workflow\Transition;
+use LucaTerribili\LaravelWorkflow\Classes\FridayTransition as Transition;
 use Symfony\Component\Workflow\StateMachine;
 use Symfony\Component\Workflow\DefinitionBuilder;
 use LucaTerribili\LaravelWorkflow\Events\DispatcherAdapter;
 use Symfony\Component\Workflow\Metadata\InMemoryMetadataStore;
 use Illuminate\Contracts\Events\Dispatcher as EventsDispatcher;
+use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Workflow\Exception\InvalidArgumentException;
 use Symfony\Component\Workflow\MarkingStore\MarkingStoreInterface;
@@ -31,9 +33,8 @@ class WorkflowRegistry
      * @var array
      */
     protected array $config;
-
     /**
-     * @var
+     * @var array
      */
     protected array $db_workflows;
 
@@ -45,17 +46,17 @@ class WorkflowRegistry
     /**
      * @var
      */
-    protected $currentClass;
+    protected mixed $currentClass;
 
     /**
      * @var array
      */
-    protected $registryConfig;
+    protected array $registryConfig;
 
     /**
      * @var EventDispatcherInterface
      */
-    protected $dispatcher;
+    protected EventDispatcherInterface $dispatcher;
 
     /**
      * Keeps track of loaded workflows
@@ -63,18 +64,17 @@ class WorkflowRegistry
      *
      * @var array
      */
-    protected $loadedWorkflows = [];
+    protected array $loadedWorkflows = [];
 
     /**
-     * WorkflowRegistry constructor
-     *
+     *  WorkflowRegistry constructor
      * @param array $config
-     * @param array|null $registryConfig
      * @param EventsDispatcher $laravelDispatcher
-     *
-     * @throws \ReflectionException
+     * @param array|null $registryConfig
+     * @throws DuplicateWorkflowException
+     * @throws ReflectionException
      */
-    public function __construct(array $config, array $registryConfig = null, EventsDispatcher $laravelDispatcher)
+    public function __construct(array $config, EventsDispatcher $laravelDispatcher, array $registryConfig = null)
     {
         $this->registry = new Registry();
         $this->config = $config;
@@ -90,12 +90,12 @@ class WorkflowRegistry
     /**
      * Return the $subject workflow
      *
-     * @param  object $subject
-     * @param  string $workflowName
+     * @param object $subject
+     * @param string|null $workflowName
      *
-     * @return Workflow
+     * @return WorkflowInterface
      */
-    public function get($subject, $workflowName = null): Workflow
+    public function get(object $subject, string $workflowName = null): WorkflowInterface
     {
         if (is_null($workflowName)) {
             $workflowName = $this->getWorkflowName($subject);
@@ -106,11 +106,11 @@ class WorkflowRegistry
 
     /**
      * @param mixed $class
-     * @param null|mixed $workflow_name
-     *
+     * @param mixed|null $workflow_name
+     * @return $this
      * @throws \Exception
      */
-    public function load($class, $workflow_name = null): static
+    public function load(mixed $class, mixed $workflow_name = null): static
     {
         $this->currentClass = $class;
         $workflow_scope = collect($this->db_workflows)->filter(callback: function ($workflow, $name) use ($workflow_name) {
@@ -120,7 +120,6 @@ class WorkflowRegistry
                 return in_array(get_class($this->currentClass), $workflow['supports']);
             }
         })->first();
-
         if (! $workflow_scope) {
             throw new \Exception('Non esiste un Workflow valido per questa richiesta');
         }
@@ -136,7 +135,7 @@ class WorkflowRegistry
      *
      * @return Workflow[]
      */
-    public function all($subject): array
+    public function all(object $subject): array
     {
         return $this->registry->all($subject);
     }
@@ -147,11 +146,11 @@ class WorkflowRegistry
      * @param Workflow $workflow
      * @param string $supportStrategy
      *
-     * @throws DuplicateWorkflowException
-     *
      * @return void
+     *@throws DuplicateWorkflowException
+     *
      */
-    public function add(Workflow $workflow, $supportStrategy)
+    public function add(Workflow $workflow, string $supportStrategy): void
     {
         if (! $this->isLoaded($workflow->getName(), $supportStrategy)) {
             $this->registry->addWorkflow($workflow, new InstanceOfSupportStrategy($supportStrategy));
@@ -162,13 +161,13 @@ class WorkflowRegistry
     /**
      * Gets the loaded workflows
      *
-     * @param string $supportStrategy
-     *
-     * @throws RegistryNotTrackedException
+     * @param string|null $supportStrategy
      *
      * @return array
+     *@throws RegistryNotTrackedException
+     *
      */
-    public function getLoaded($supportStrategy = null)
+    public function getLoaded(string $supportStrategy = null): array
     {
         if (! $this->registryConfig['track_loaded']) {
             throw new RegistryNotTrackedException('This registry is not being tracked, and thus has not recorded any loaded workflows.');
@@ -182,16 +181,13 @@ class WorkflowRegistry
     }
 
     /**
-     * Add a workflow to the registry from array
-     *
-     * @param  string $name
-     * @param  array  $workflowData
-     *
-     * @throws \ReflectionException
-     *
+     * @param $name
+     * @param array $workflowData
      * @return void
+     * @throws DuplicateWorkflowException
+     * @throws ReflectionException
      */
-    public function addFromArray($name, array $workflowData)
+    public function addFromArray($name, array $workflowData): void
     {
         $metadata = $this->extractWorkflowPlacesMetaData($workflowData);
 
@@ -203,7 +199,7 @@ class WorkflowRegistry
             }
 
             foreach ((array) $transition['from'] as $from) {
-                $transitionObj = new Transition($transitionName, $from, $transition['to']);
+                $transitionObj = new Transition($transitionName, $from, $transition['to'], $transition['handle_by_system']);
                 $builder->addTransition($transitionObj);
 
                 if (isset($transition['metadata'])) {
@@ -236,15 +232,14 @@ class WorkflowRegistry
     }
 
     /**
-     * @param $obejct
-     *
+     * @param $object
      * @return false|int|string
      */
-    public function getLabelStatus($obejct): bool|int|string
+    public function getLabelStatus($object): bool|int|string
     {
         $property = $this->current_workflow['marking_store']['property'];
 
-        return array_search($obejct->$property, $this->current_workflow['places']) ?: '';
+        return array_search($object->$property, $this->current_workflow['places']) ?: '';
     }
 
     /**
@@ -268,9 +263,9 @@ class WorkflowRegistry
         if(count($this->current_workflow['transitions']) > 0) {
             $transitions = array_keys($this->current_workflow['transitions']);
 
-            return count(Arr::where($transitions, fn ($transition) => $this->get($this->currentClass)->can($this->currentClass, $transition))) > 0;
+            return count(Arr::where($transitions,
+                    fn ($transition) => $this->get($this->currentClass)->can($this->currentClass, $transition))) > 0;
         }
-
         return false;
     }
 
@@ -280,12 +275,10 @@ class WorkflowRegistry
     }
 
     /**
-     * @param $places
      * @param mixed $workflow
-     *
-     * @return mixed[]
+     * @return array
      */
-    protected function createPlace($workflow)
+    protected function createPlace(mixed $workflow): array
     {
         $workflow_places = $workflow->getAllStatusAttribute(false);
         $start_label = array_search($workflow->start_place, $workflow_places);
@@ -301,13 +294,13 @@ class WorkflowRegistry
     }
 
     /**
-     * @param $subejct
+     * @param $subject
      *
      * @return int|string|null
      */
-    protected function getWorkflowName($subejct)
+    protected function getWorkflowName($subject): int|string|null
     {
-        $class_name = $subejct::class;
+        $class_name = $subject::class;
         $workflow_name = Arr::where($this->db_workflows, fn ($arr) => in_array($class_name, $arr['supports']));
 
         return key($workflow_name);
@@ -321,8 +314,6 @@ class WorkflowRegistry
         if (array_key_exists('events_to_dispatch', $workflowData)) {
             return $workflowData['events_to_dispatch'];
         }
-
-        // Null dispatches all, [] dispatches none.
         return null;
     }
 
@@ -331,7 +322,7 @@ class WorkflowRegistry
      *
      * @return array
      */
-    protected function getDefaultRegistryConfig()
+    protected function getDefaultRegistryConfig(): array
     {
         return [
             'track_loaded' => false,
@@ -349,7 +340,7 @@ class WorkflowRegistry
      *
      * @return bool
      */
-    protected function isLoaded($workflowName, $supportStrategy)
+    protected function isLoaded($workflowName, $supportStrategy): bool
     {
         if (! $this->registryConfig['track_loaded']) {
             return false;
@@ -374,7 +365,7 @@ class WorkflowRegistry
      *
      * @return void
      */
-    protected function setLoaded($workflowName, $supportStrategy)
+    protected function setLoaded($workflowName, $supportStrategy): void
     {
         if (! $this->registryConfig['track_loaded']) {
             return;
@@ -389,13 +380,12 @@ class WorkflowRegistry
 
     /**
      * Return the workflow instance
-     *
-     * @param  string                $name
-     * @param  array                 $workflowData
-     * @param  Definition            $definition
-     * @param  MarkingStoreInterface $markingStore
-     *
-     * @return Workflow
+     * @param $name
+     * @param array $workflowData
+     * @param Definition $definition
+     * @param MarkingStoreInterface $markingStore
+     * @param array|null $eventsToDispatch
+     * @return Workflow|mixed|StateMachine
      */
     protected function getWorkflowInstance(
         $name,
@@ -418,13 +408,12 @@ class WorkflowRegistry
     /**
      * Return the making store instance
      *
-     * @param  array $workflowData
+     * @param array $workflowData
      *
-     * @throws \ReflectionException
      *
-     * @return MarkingStoreInterface
+     * @return MarkingStoreInterface|EloquentMarkingStore
      */
-    protected function getMarkingStoreInstance(array $workflowData)
+    protected function getMarkingStoreInstance(array $workflowData): MarkingStoreInterface|EloquentMarkingStore
     {
         $markingStoreData = $workflowData['marking_store'] ?? [];
         $property = $markingStoreData['property'] ?? 'marking';
@@ -452,7 +441,7 @@ class WorkflowRegistry
      *
      * @return array
      */
-    protected function extractWorkflowPlacesMetaData(array &$workflowData)
+    protected function extractWorkflowPlacesMetaData(array &$workflowData): array
     {
         $metadata = [
             'workflow' => [],
@@ -503,7 +492,7 @@ class WorkflowRegistry
     /**
      * @return array
      */
-    private function __loadAllWorkflow()
+    private function __loadAllWorkflow(): array
     {
         $workflows = $this->config['models']['workflow']::with('transitions')->get();
         $array_workflow = [];
@@ -536,6 +525,7 @@ class WorkflowRegistry
                     'from' => $transition->from,
                     'to' => $transition->to,
                     'permission' => $transition->permission,
+                    'handle_by_system' => $transition->handle_by_system
                 ];
             }
         }
